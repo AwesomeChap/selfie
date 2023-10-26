@@ -141,6 +141,7 @@ char* store_character(char* s, uint64_t i, char c);
 
 uint64_t is_letter(char c);
 uint64_t is_digit(char c);
+uint64_t is_hexadecimal_digit(char c);
 
 char*    string_alloc(uint64_t l);
 uint64_t string_length(char* s);
@@ -463,11 +464,73 @@ uint64_t SYM_CHAR     = 31; // char
 uint64_t SYM_UNSIGNED = 32; // unsigned
 uint64_t SYM_CONST    = 33; // const
 
+// symbols for asm source files
+
+uint64_t SYM_LUI      = 34; // lui
+uint64_t SYM_ADDI     = 35; // addi
+uint64_t SYM_ADD      = 36; // add
+uint64_t SYM_SUB      = 37; // sub
+uint64_t SYM_MUL      = 38; // mul
+uint64_t SYM_DIVU     = 39; // divu
+uint64_t SYM_REMU     = 40; // remu
+uint64_t SYM_SLTU     = 41; // sltu
+uint64_t SYM_LD       = 42; // ld
+uint64_t SYM_SD       = 43; // sd
+uint64_t SYM_BEQ      = 44; // beq
+uint64_t SYM_JAL      = 45; // jal
+uint64_t SYM_JALR     = 46; // jalr
+uint64_t SYM_ECALL    = 47; // ecall
+uint64_t SYM_NOP      = 48; // nop
+uint64_t SYM_8BYTE    = 49; // .8byte
+
+uint64_t SYM_ZERO  = 50;
+uint64_t SYM_RA    = 51;
+uint64_t SYM_SP    = 52;
+uint64_t SYM_GP    = 53;
+uint64_t SYM_TP    = 54;
+uint64_t SYM_T0    = 55;
+uint64_t SYM_T1    = 56;
+uint64_t SYM_T2    = 57;
+uint64_t SYM_S0    = 58;
+uint64_t SYM_S1    = 59;
+uint64_t SYM_A0    = 60;
+uint64_t SYM_A1    = 61;
+uint64_t SYM_A2    = 62;
+uint64_t SYM_A3    = 63;
+uint64_t SYM_A4    = 64;
+uint64_t SYM_A5    = 65;
+uint64_t SYM_A6    = 66;
+uint64_t SYM_A7    = 67;
+uint64_t SYM_S2    = 68;
+uint64_t SYM_S3    = 69;
+uint64_t SYM_S4    = 70;
+uint64_t SYM_S5    = 71;
+uint64_t SYM_S6    = 72;
+uint64_t SYM_S7    = 73;
+uint64_t SYM_S8    = 74;
+uint64_t SYM_S9    = 75;
+uint64_t SYM_S10   = 76;
+uint64_t SYM_S11   = 77;
+uint64_t SYM_T3    = 78;
+uint64_t SYM_T4    = 79;
+uint64_t SYM_T5    = 80;
+uint64_t SYM_T6    = 81;
+
+
+
 uint64_t* SYMBOLS; // strings representing symbols
 
 uint64_t MAX_IDENTIFIER_LENGTH = 64;  // maximum number of characters in an identifier
 uint64_t MAX_INTEGER_LENGTH    = 20;  // maximum number of characters in an unsigned integer
 uint64_t MAX_STRING_LENGTH     = 128; // maximum number of characters in a string
+
+uint64_t INS_TYPE_1 = 1; // ins r, imm
+uint64_t INS_TYPE_2 = 2; // ins r, r1, imm
+uint64_t INS_TYPE_3 = 3; // ins r, r1, r2
+uint64_t INS_TYPE_4 = 4; // ins r, imm(r1)
+uint64_t INS_TYPE_5 = 5; // ins 
+uint64_t INS_TYPE_6 = 6; // .8byte 0x...
+
 
 // ------------------------ GLOBAL VARIABLES -----------------------
 
@@ -488,6 +551,7 @@ char* integer    = (char*) 0; // stores scanned integer as string
 char* string     = (char*) 0; // stores scanned string
 
 uint64_t literal = 0; // numerical value of most recently scanned integer or character
+uint64_t base = 10; // base of most recently scanned integer
 
 uint64_t integer_is_signed = 0; // enforce INT64_MIN limit if '-' was scanned before
 
@@ -496,10 +560,12 @@ uint64_t symbol; // most recently recognized symbol
 char*    source_name = (char*) 0; // name of source file
 uint64_t source_fd   = 0; // file descriptor of open source file
 
+uint64_t is_asm = 0; // 1 while scanning assembly files, 0 otherwise
+
 // ------------------------- INITIALIZATION ------------------------
 
 void init_scanner () {
-  SYMBOLS = smalloc((SYM_CONST + 1) * sizeof(uint64_t*));
+  SYMBOLS = smalloc((SYM_T6 + 1) * sizeof(uint64_t*));
 
   *(SYMBOLS + SYM_INTEGER)      = (uint64_t) "integer";
   *(SYMBOLS + SYM_CHARACTER)    = (uint64_t) "character";
@@ -536,6 +602,57 @@ void init_scanner () {
   *(SYMBOLS + SYM_CHAR)     = (uint64_t) "char";
   *(SYMBOLS + SYM_UNSIGNED) = (uint64_t) "unsigned";
   *(SYMBOLS + SYM_CONST)    = (uint64_t) "const";
+
+  *(SYMBOLS + SYM_LUI)      = (uint64_t) "lui";
+  *(SYMBOLS + SYM_ADDI)     = (uint64_t) "addi";
+  *(SYMBOLS + SYM_ADD)      = (uint64_t) "add";
+  *(SYMBOLS + SYM_SUB)      = (uint64_t) "sub";
+  *(SYMBOLS + SYM_MUL)      = (uint64_t) "mul";
+  *(SYMBOLS + SYM_DIVU)     = (uint64_t) "divu";
+  *(SYMBOLS + SYM_REMU)     = (uint64_t) "remu";
+  *(SYMBOLS + SYM_SLTU)     = (uint64_t) "sltu";
+  *(SYMBOLS + SYM_LD)       = (uint64_t) "ld";
+  *(SYMBOLS + SYM_SD)       = (uint64_t) "sd";
+  *(SYMBOLS + SYM_BEQ)      = (uint64_t) "beq";
+  *(SYMBOLS + SYM_JAL)      = (uint64_t) "jal";
+  *(SYMBOLS + SYM_JALR)     = (uint64_t) "jalr";
+  *(SYMBOLS + SYM_ECALL)    = (uint64_t) "ecall";
+  *(SYMBOLS + SYM_NOP)      = (uint64_t) "nop";
+  *(SYMBOLS + SYM_8BYTE)    = (uint64_t) ".8byte";
+
+  *(SYMBOLS + SYM_ZERO)  = (uint64_t) "zero";
+  *(SYMBOLS + SYM_RA)    = (uint64_t) "ra";
+  *(SYMBOLS + SYM_SP)    = (uint64_t) "sp";
+  *(SYMBOLS + SYM_GP)    = (uint64_t) "gp";
+  *(SYMBOLS + SYM_TP)    = (uint64_t) "tp";
+  *(SYMBOLS + SYM_T0)    = (uint64_t) "t0";
+  *(SYMBOLS + SYM_T1)    = (uint64_t) "t1";
+  *(SYMBOLS + SYM_T2)    = (uint64_t) "t2";
+  *(SYMBOLS + SYM_S0)    = (uint64_t) "s0";
+  *(SYMBOLS + SYM_S1)    = (uint64_t) "s1";
+  *(SYMBOLS + SYM_A0)    = (uint64_t) "a0";
+  *(SYMBOLS + SYM_A1)    = (uint64_t) "a1";
+  *(SYMBOLS + SYM_A2)    = (uint64_t) "a2";
+  *(SYMBOLS + SYM_A3)    = (uint64_t) "a3";
+  *(SYMBOLS + SYM_A4)    = (uint64_t) "a4";
+  *(SYMBOLS + SYM_A5)    = (uint64_t) "a5";
+  *(SYMBOLS + SYM_A6)    = (uint64_t) "a6";
+  *(SYMBOLS + SYM_A7)    = (uint64_t) "a7";
+  *(SYMBOLS + SYM_S2)    = (uint64_t) "s2";
+  *(SYMBOLS + SYM_S3)    = (uint64_t) "s3";
+  *(SYMBOLS + SYM_S4)    = (uint64_t) "s4";
+  *(SYMBOLS + SYM_S5)    = (uint64_t) "s5";
+  *(SYMBOLS + SYM_S6)    = (uint64_t) "s6";
+  *(SYMBOLS + SYM_S7)    = (uint64_t) "s7";
+  *(SYMBOLS + SYM_S8)    = (uint64_t) "s8";
+  *(SYMBOLS + SYM_S9)    = (uint64_t) "s9";
+  *(SYMBOLS + SYM_S10)   = (uint64_t) "s10";
+  *(SYMBOLS + SYM_S11)   = (uint64_t) "s11";
+  *(SYMBOLS + SYM_T3)    = (uint64_t) "t3";
+  *(SYMBOLS + SYM_T4)    = (uint64_t) "t4";
+  *(SYMBOLS + SYM_T5)    = (uint64_t) "t5";
+  *(SYMBOLS + SYM_T6)    = (uint64_t) "t6";
+
 
   character = CHAR_EOF;
   symbol    = SYM_EOF;
@@ -675,6 +792,8 @@ uint64_t is_neither_rbrace_nor_eof();
 uint64_t is_possibly_parameter(uint64_t is_already_variadic);
 
 uint64_t is_neither_type_nor_void();
+uint64_t is_invalid_riscv_keyword();
+uint64_t is_register();
 uint64_t is_not_statement();
 uint64_t is_not_factor();
 
@@ -683,6 +802,7 @@ void syntax_error_unexpected_symbol();
 
 uint64_t get_expected_symbol(uint64_t expected_symbol);
 void     get_required_symbol(uint64_t required_symbol);
+uint64_t get_instruction_type(uint64_t instruction);
 
 void syntax_error_undeclared_identifier(char* name);
 void syntax_error_unexpected_identifier(char* expected);
@@ -691,6 +811,8 @@ void print_type(uint64_t type);
 void type_warning(uint64_t expected, uint64_t found);
 
 void compile_cstar(); // grammar top symbol, parser entry
+
+void compile_asm();
 
 uint64_t* compile_variable(char* variable, uint64_t type, uint64_t offset); // returns variable entry
 
@@ -2797,6 +2919,19 @@ uint64_t is_digit(char c) {
     return 0;
 }
 
+uint64_t is_hexadecimal_digit(char c) {
+  if(is_digit(c))
+    return 1;
+  else if(c >= 'A')
+    if(c <= 'F')
+      return 1;
+    else 
+      return 0;
+  else 
+    return 0;
+  return 0;
+}
+
 char* string_alloc(uint64_t l) {
   // allocates zeroed memory for a string of l characters
   // plus a null terminator aligned to word size
@@ -2889,31 +3024,36 @@ uint64_t atoi(char* s) {
   // loop until s is terminated
   while (c != 0) {
     // the numerical value of ASCII-encoded decimal digits
-    // is offset by the ASCII code of '0' (which is 48)
-    c = c - '0';
+   if(is_digit(c)) {
+      // is offset by the ASCII code of '0' (which is 48)
+      c = c - '0';
+    } else {
+      // is offset by the ASCII code of 'A' (which is 65)
+      c = c - 'A' + 10;
+    }
 
-    if (c > 9) {
+    if (c > base - 1) {
       printf("%s: cannot convert non-decimal number %s\n", selfie_name, s);
 
       exit(EXITCODE_SCANNERERROR);
     }
 
-    // assert: s contains a decimal number
+    // assert: s contains a decimal or a hexadecimal number
 
-    // use base 10 but detect wrap around
-    if (n < UINT_MAX / 10)
-      n = n * 10 + c;
-    else if (n == UINT_MAX / 10)
-      if (c <= UINT_MAX % 10)
-        n = n * 10 + c;
+    // use base parameter but detect wrap around
+    if (n < UINT_MAX / base)
+      n = n * base + c;
+    else if (n == UINT_MAX / base)
+      if (c <= UINT_MAX % base)
+        n = n * base + c;
       else {
-        // s contains a decimal number larger than UINT_MAX
+        // s contains a decimal or a hexadecimal number larger than UINT_MAX
         printf("%s: cannot convert out-of-bound number %s\n", selfie_name, s);
 
         exit(EXITCODE_SCANNERERROR);
       }
     else {
-      // s contains a decimal number larger than UINT_MAX
+      // s contains a decimal or a hexadecimal number larger than UINT_MAX
       printf("%s: cannot convert out-of-bound number %s\n", selfie_name, s);
 
       exit(EXITCODE_SCANNERERROR);
@@ -3687,6 +3827,101 @@ uint64_t identifier_or_keyword() {
   else if (identifier_string_match(SYM_CONST))
     // selfie bootstraps const to uint64_t!
     return SYM_UINT64;
+  else if (identifier_string_match(SYM_LUI))
+    return SYM_LUI;
+  else if (identifier_string_match(SYM_ADDI))
+    return SYM_ADDI;
+  else if (identifier_string_match(SYM_ADD))
+    return SYM_ADD;
+  else if (identifier_string_match(SYM_SUB))
+    return SYM_SUB;
+  else if (identifier_string_match(SYM_MUL))
+    return SYM_MUL;
+  else if (identifier_string_match(SYM_DIVU))
+    return SYM_DIVU;
+  else if (identifier_string_match(SYM_REMU))
+    return SYM_REMU;
+  else if (identifier_string_match(SYM_SLTU))
+    return SYM_SLTU;
+  else if (identifier_string_match(SYM_LD))
+    return SYM_LD;
+  else if (identifier_string_match(SYM_SD))
+    return SYM_SD;
+  else if (identifier_string_match(SYM_JAL))
+    return SYM_JAL;
+  else if (identifier_string_match(SYM_JALR))
+    return SYM_JALR;
+  else if (identifier_string_match(SYM_BEQ))
+    return SYM_BEQ;
+  else if (identifier_string_match(SYM_ECALL))
+    return SYM_ECALL;
+  else if (identifier_string_match(SYM_NOP))
+    return SYM_NOP;
+  /*
+  else if(identifier_string_match(SYM_ZERO))
+    return SYM_ZERO;
+  else if(identifier_string_match(SYM_RA))
+    return SYM_RA;
+  else if(identifier_string_match(SYM_SP))
+    return SYM_SP;
+  else if(identifier_string_match(SYM_GP))
+    return SYM_GP;
+  else if(identifier_string_match(SYM_TP))
+    return SYM_TP;
+  else if(identifier_string_match(SYM_T0))
+    return SYM_T0;
+  else if(identifier_string_match(SYM_T1))
+    return SYM_T1;
+  else if(identifier_string_match(SYM_T2))
+    return SYM_T2;
+  else if(identifier_string_match(SYM_S0))
+    return SYM_S0;
+  else if(identifier_string_match(SYM_S1))
+    return SYM_S1;
+  else if(identifier_string_match(SYM_A0))
+    return SYM_A0;
+  else if(identifier_string_match(SYM_A1))
+    return SYM_A1;
+  else if(identifier_string_match(SYM_A2))
+    return SYM_A2;
+  else if(identifier_string_match(SYM_A3))
+    return SYM_A3;
+  else if(identifier_string_match(SYM_A4))
+    return SYM_A4;
+  else if(identifier_string_match(SYM_A5))
+    return SYM_A5;
+  else if(identifier_string_match(SYM_A6))
+    return SYM_A6;
+  else if(identifier_string_match(SYM_A7))
+    return SYM_A7;
+  else if(identifier_string_match(SYM_S2))
+    return SYM_S2;
+  else if(identifier_string_match(SYM_S3))
+    return SYM_S3;
+  else if(identifier_string_match(SYM_S4))
+    return SYM_S4;
+  else if(identifier_string_match(SYM_S5))
+    return SYM_S5;
+  else if(identifier_string_match(SYM_S6))
+    return SYM_S6;
+  else if(identifier_string_match(SYM_S7))
+    return SYM_S7;
+  else if(identifier_string_match(SYM_S8))
+    return SYM_S8;
+  else if(identifier_string_match(SYM_S9))
+    return SYM_S9;
+  else if(identifier_string_match(SYM_S10))
+    return SYM_S10;
+  else if(identifier_string_match(SYM_S11))
+    return SYM_S11;
+  else if(identifier_string_match(SYM_T3))
+    return SYM_T3;
+  else if(identifier_string_match(SYM_T4))
+    return SYM_T4;
+  else if(identifier_string_match(SYM_T5))
+    return SYM_T5;
+  else if(identifier_string_match(SYM_T6))
+    return SYM_T6;*/
   else
     return SYM_IDENTIFIER;
 }
@@ -3736,7 +3971,48 @@ void get_symbol() {
           // 0 is 0, not 00, 000, etc.
           get_character();
 
-          literal = 0;
+                    if(character == 'x') {
+            get_character();
+            // setting hexadecimal integer literal base
+            base = 16;
+
+            integer = string_alloc(MAX_INTEGER_LENGTH);
+
+            i = 0;
+
+            while(is_hexadecimal_digit(character)) {
+              if (i >= MAX_INTEGER_LENGTH) {
+                if (integer_is_signed)
+                  syntax_error_message("signed integer out of bound");
+                else
+                  syntax_error_message("integer out of bound");
+
+                exit(EXITCODE_SCANNERERROR);
+              }
+
+              store_character(integer, i, character);
+
+              i = i + 1;
+
+              get_character();
+            }
+
+            store_character(integer, i, 0); // null-terminated string
+
+            literal = atoi(integer);
+
+            if (integer_is_signed)
+              if (literal > INT64_MIN) {
+                syntax_error_message("signed integer out of bound");
+
+                exit(EXITCODE_SCANNERERROR);
+              }
+
+            // resetting decimal integer literal base
+            base = 10; 
+          } else {
+            literal = 0;
+          }
         } else {
           // accommodate integer and null for termination
           integer = string_alloc(MAX_INTEGER_LENGTH);
@@ -3912,17 +4188,40 @@ void get_symbol() {
       } else if (character == CHAR_DOT) {
         get_character();
 
-        if (character == CHAR_DOT) {
-          get_character();
-
-          if (character == CHAR_DOT)
+        if(is_asm) {
+            if(character == '8'){
+              get_character();
+              if(character == 'b'){
+                get_character();
+                if(character == 'y'){ 
+                  get_character();
+                  if(character == 't') {
+                    get_character();
+                    if(character == 'e') {
+                      symbol = SYM_8BYTE;
+                      get_character();
+                    } else 
+                      syntax_error_expected_character('e');
+                  } else 
+                    syntax_error_expected_character('t');
+                } else 
+                  syntax_error_expected_character('y');
+              } else 
+                syntax_error_expected_character('b');
+            } else 
+              syntax_error_expected_character('8');
+        } else {
+          if (character == CHAR_DOT) {
             get_character();
-          else
-            syntax_error_expected_character(CHAR_DOT);
-        } else
-          syntax_error_expected_character(CHAR_DOT);
+            if (character == CHAR_DOT)
+              get_character();
+            else
+              syntax_error_expected_character(CHAR_DOT);
+          } else
+              syntax_error_expected_character(CHAR_DOT);
 
-        symbol = SYM_ELLIPSIS;
+          symbol = SYM_ELLIPSIS;
+        }
       } else {
         print_line_number("syntax error", line_number);
         printf("found unknown character ");
@@ -4265,6 +4564,112 @@ uint64_t is_neither_type_nor_void() {
     return 1;
 }
 
+uint64_t is_invalid_riscv_keyword() {
+  if (symbol == SYM_LUI)
+    return 0;
+  else if (symbol == SYM_ADDI)
+    return 0;
+  else if (symbol == SYM_ADD)
+    return 0;
+  else if (symbol == SYM_SUB)
+    return 0;
+  else if (symbol == SYM_MUL)
+    return 0;
+  else if (symbol == SYM_DIVU)
+    return 0;
+  else if (symbol == SYM_REMU)
+    return 0;
+  else if (symbol == SYM_SLTU)
+    return 0;
+  else if (symbol == SYM_LD)
+    return 0;
+  else if (symbol == SYM_SD)
+    return 0;
+  else if (symbol == SYM_JAL)
+    return 0;
+  else if (symbol == SYM_JALR)
+    return 0;
+  else if (symbol == SYM_BEQ)
+    return 0;
+  else if (symbol == SYM_ECALL)
+    return 0;
+  else if (symbol == SYM_NOP)
+    return 0;
+  else if (symbol == SYM_8BYTE)
+    return 0;
+  else
+    return 1;
+}
+
+uint64_t is_register() {
+  if(symbol == SYM_ZERO)
+    return 1;
+  else if(symbol == SYM_RA)
+    return 1;
+  else if(symbol == SYM_SP)
+    return 1;
+  else if(symbol == SYM_GP)
+    return 1;
+  else if(symbol == SYM_TP)
+    return 1;
+  else if(symbol == SYM_T0)
+    return 1;
+  else if(symbol == SYM_T1)
+    return 1;
+  else if(symbol == SYM_T2)
+    return 1;
+  else if(symbol == SYM_S0)
+    return 1;
+  else if(symbol == SYM_S1)
+    return 1;
+  else if(symbol == SYM_A0)
+    return 1;
+  else if(symbol == SYM_A1)
+    return 1;
+  else if(symbol == SYM_A2)
+    return 1;
+  else if(symbol == SYM_A3)
+    return 1;
+  else if(symbol == SYM_A4)
+    return 1;
+  else if(symbol == SYM_A5)
+    return 1;
+  else if(symbol == SYM_A6)
+    return 1;
+  else if(symbol == SYM_A7)
+    return 1;
+  else if(symbol == SYM_S2)
+    return 1;
+  else if(symbol == SYM_S3)
+    return 1;
+  else if(symbol == SYM_S4)
+    return 1;
+  else if(symbol == SYM_S5)
+    return 1;
+  else if(symbol == SYM_S6)
+    return 1;
+  else if(symbol == SYM_S7)
+    return 1;
+  else if(symbol == SYM_S8)
+    return 1;
+  else if(symbol == SYM_S9)
+    return 1;
+  else if(symbol == SYM_S10)
+    return 1;
+  else if(symbol == SYM_S11)
+    return 1;
+  else if(symbol == SYM_T3)
+    return 1;
+  else if(symbol == SYM_T4)
+    return 1;
+  else if(symbol == SYM_T5)
+    return 1;
+  else if(symbol == SYM_T6)
+    return 1;
+  else
+  return 0;
+}
+
 uint64_t is_not_statement() {
   if (symbol == SYM_ASTERISK)
     return 0;
@@ -4327,6 +4732,41 @@ void get_required_symbol(uint64_t required_symbol) {
     exit(EXITCODE_PARSERERROR);
 }
 
+uint64_t get_instruction_type(uint64_t instruction) {
+  if (instruction == SYM_LUI)
+    return INS_TYPE_1;
+  else if (instruction == SYM_JAL)
+    return INS_TYPE_1;
+  else if (instruction == SYM_ADDI)
+    return INS_TYPE_2;
+  else if (instruction == SYM_BEQ)
+    return INS_TYPE_2;
+  else if (instruction == SYM_ADD)
+    return INS_TYPE_3;
+  else if (instruction == SYM_SUB)
+    return INS_TYPE_3;
+  else if (instruction == SYM_MUL)
+    return INS_TYPE_3;
+  else if (instruction == SYM_DIVU)
+    return INS_TYPE_3;
+  else if (instruction == SYM_REMU)
+    return INS_TYPE_3;
+  else if (instruction == SYM_SLTU)
+    return INS_TYPE_3;
+  else if (instruction == SYM_LD)
+    return INS_TYPE_4;
+  else if (instruction == SYM_SD)
+    return INS_TYPE_4;
+  else if (instruction == SYM_JALR)
+    return INS_TYPE_4;
+  else if (instruction == SYM_ECALL)
+    return INS_TYPE_5;
+  else if (instruction == SYM_NOP)
+    return INS_TYPE_5;
+  else
+    return INS_TYPE_6;
+} 
+
 void syntax_error_undeclared_identifier(char* name) {
   print_line_number("syntax error", line_number);
   printf("%s undeclared\n", name);
@@ -4361,6 +4801,155 @@ void type_warning(uint64_t expected, uint64_t found) {
   printf(" expected but ");
   print_type(found);
   printf(" found\n");
+}
+
+void compile_asm() {
+  uint64_t type;
+  
+  while (symbol != SYM_EOF) {
+    while(is_invalid_riscv_keyword()) {
+      syntax_error_unexpected_symbol();
+      if (symbol == SYM_EOF)
+        exit(EXITCODE_PARSERERROR);
+      else
+        get_symbol();
+    }
+
+    type = get_instruction_type(symbol);
+
+    get_symbol();
+
+    if(type == INS_TYPE_1) {
+      if(symbol == SYM_IDENTIFIER) {
+        get_symbol();
+        if(symbol == SYM_COMMA) {
+          get_symbol();
+          integer_is_signed = 0;
+          if(symbol == SYM_MINUS) {
+            integer_is_signed = 1;
+            get_symbol();
+          }
+          if(symbol == SYM_INTEGER) {
+            get_symbol();
+          } else {
+            syntax_error_unexpected_symbol();
+          }
+        } else {
+        syntax_error_unexpected_symbol();
+      }
+      } else {
+        syntax_error_unexpected_symbol();
+      }
+    }
+
+    if(type == INS_TYPE_2) {
+      if(symbol == SYM_IDENTIFIER) {
+        get_symbol();
+        if(symbol == SYM_COMMA) {
+          get_symbol(); 
+          if(symbol == SYM_IDENTIFIER) {
+            get_symbol();
+            if(symbol == SYM_COMMA) {
+              get_symbol();
+              integer_is_signed = 0;
+              if(symbol == SYM_MINUS) {
+                integer_is_signed = 1;
+                get_symbol();
+              }
+              if(symbol == SYM_INTEGER) {
+                get_symbol();
+              } else {
+                syntax_error_unexpected_symbol();
+              }
+            } else {
+              syntax_error_unexpected_symbol();
+            }
+          } else {
+            syntax_error_unexpected_symbol();
+          }
+        } else {
+          syntax_error_unexpected_symbol();
+        }
+      }
+      else {
+        syntax_error_unexpected_symbol();
+      }
+    }
+
+    if(type == INS_TYPE_3) {
+      if(symbol == SYM_IDENTIFIER) {
+        get_symbol();
+        if(symbol == SYM_COMMA) {
+          get_symbol(); 
+          if(symbol == SYM_IDENTIFIER) {
+            get_symbol();
+            if(symbol == SYM_COMMA) {
+              get_symbol();
+              if(symbol == SYM_IDENTIFIER) {
+                get_symbol();
+              } else {
+                syntax_error_unexpected_symbol();
+              }
+            } else {
+              syntax_error_unexpected_symbol();
+            }
+          } else {
+            syntax_error_unexpected_symbol();
+          }
+        } else {
+          syntax_error_unexpected_symbol();
+        }
+      }
+      else {
+        syntax_error_unexpected_symbol();
+      }
+    }
+
+    if(type == INS_TYPE_4) {
+      if(symbol == SYM_IDENTIFIER) {
+        get_symbol();
+        if(symbol == SYM_COMMA) {
+          get_symbol();
+          integer_is_signed = 0;
+          if(symbol == SYM_MINUS) {
+            integer_is_signed = 1;
+            get_symbol();
+          }
+          if (symbol == SYM_INTEGER) {
+            get_symbol();
+            if(symbol == SYM_LPARENTHESIS) {
+              get_symbol();
+              if(symbol == SYM_IDENTIFIER) {
+                get_symbol();
+                if(symbol == SYM_RPARENTHESIS)
+                  get_symbol();
+                else
+                  syntax_error_unexpected_symbol();
+              } else 
+                syntax_error_unexpected_symbol();
+            } else
+              syntax_error_unexpected_symbol();
+          } else {
+            syntax_error_unexpected_symbol();
+          }
+        } 
+        else 
+          syntax_error_unexpected_symbol();
+      } else 
+        syntax_error_unexpected_symbol();
+    }
+
+    if(type == INS_TYPE_5) {
+    }
+
+    if(type == INS_TYPE_6) {
+      if(symbol == SYM_INTEGER) {
+        get_symbol();
+      } else {
+        syntax_error_unexpected_symbol();
+      }
+    }
+  }
 }
 
 void compile_cstar() {
@@ -6294,7 +6883,11 @@ void selfie_compile() {
       reset_scanner();
       reset_parser();
 
-      compile_cstar();
+      if(is_asm) {
+        compile_asm();
+      } else {
+        compile_cstar();
+      }
 
       printf("%s: --------------------------------------------------------------------------------\n", selfie_name);
       printf("%s: %lu characters read in %lu lines and %lu comments\n", selfie_name,
@@ -11979,7 +12572,7 @@ uint64_t no_or_bad_or_more_arguments(uint64_t exit_code) {
 }
 
 void print_synopsis(char* extras) {
-  printf("%s { -c { source } | -o binary | ( -s | -S ) assembly | -l binary }%s\n", selfie_name, extras);
+  printf("%s { -c { c* source } -a { asm source } | -o binary | ( -s | -S ) assembly | -l binary }%s\n", selfie_name, extras);
 }
 
 // -----------------------------------------------------------------
@@ -12014,6 +12607,10 @@ uint64_t selfie(uint64_t extras) {
 
       if (string_compare(argument, "-c"))
         selfie_compile();
+      else if (string_compare(argument, "-a")){
+        is_asm = 1;
+        selfie_compile();
+      }
       else if (number_of_remaining_arguments() == 0)
         // remaining options have at least one argument
         return EXITCODE_BADARGUMENTS;
