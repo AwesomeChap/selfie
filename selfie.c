@@ -389,6 +389,7 @@ uint64_t is_character_not_double_quote_or_new_line_or_eof();
 uint64_t identifier_string_match(uint64_t string_index);
 uint64_t identifier_or_keyword();
 
+uint64_t get_register();
 void get_symbol();
 
 void handle_escape_sequence();
@@ -483,7 +484,7 @@ uint64_t SYM_ECALL    = 47; // ecall
 uint64_t SYM_NOP      = 48; // nop
 uint64_t SYM_8BYTE    = 49; // .8byte
 
-uint64_t SYM_ZERO  = 50;
+uint64_t SYM_ZR  = 50;
 uint64_t SYM_RA    = 51;
 uint64_t SYM_SP    = 52;
 uint64_t SYM_GP    = 53;
@@ -620,7 +621,7 @@ void init_scanner () {
   *(SYMBOLS + SYM_NOP)      = (uint64_t) "nop";
   *(SYMBOLS + SYM_8BYTE)    = (uint64_t) ".8byte";
 
-  *(SYMBOLS + SYM_ZERO)  = (uint64_t) "zero";
+  *(SYMBOLS + SYM_ZR)  = (uint64_t) "zero";
   *(SYMBOLS + SYM_RA)    = (uint64_t) "ra";
   *(SYMBOLS + SYM_SP)    = (uint64_t) "sp";
   *(SYMBOLS + SYM_GP)    = (uint64_t) "gp";
@@ -793,7 +794,6 @@ uint64_t is_possibly_parameter(uint64_t is_already_variadic);
 
 uint64_t is_neither_type_nor_void();
 uint64_t is_invalid_riscv_keyword();
-uint64_t is_register();
 uint64_t is_not_statement();
 uint64_t is_not_factor();
 
@@ -812,7 +812,13 @@ void type_warning(uint64_t expected, uint64_t found);
 
 void compile_cstar(); // grammar top symbol, parser entry
 
-void compile_asm();
+void selfie_assemble();
+void assemble_type_1();
+void assemble_type_2();
+void assemble_type_3();
+void assemble_type_4();
+void assemble_type_5();
+void assemble_type_6();
 
 uint64_t* compile_variable(char* variable, uint64_t type, uint64_t offset); // returns variable entry
 
@@ -3857,73 +3863,77 @@ uint64_t identifier_or_keyword() {
     return SYM_ECALL;
   else if (identifier_string_match(SYM_NOP))
     return SYM_NOP;
-  /*
-  else if(identifier_string_match(SYM_ZERO))
-    return SYM_ZERO;
-  else if(identifier_string_match(SYM_RA))
-    return SYM_RA;
-  else if(identifier_string_match(SYM_SP))
-    return SYM_SP;
-  else if(identifier_string_match(SYM_GP))
-    return SYM_GP;
-  else if(identifier_string_match(SYM_TP))
-    return SYM_TP;
-  else if(identifier_string_match(SYM_T0))
-    return SYM_T0;
-  else if(identifier_string_match(SYM_T1))
-    return SYM_T1;
-  else if(identifier_string_match(SYM_T2))
-    return SYM_T2;
-  else if(identifier_string_match(SYM_S0))
-    return SYM_S0;
-  else if(identifier_string_match(SYM_S1))
-    return SYM_S1;
-  else if(identifier_string_match(SYM_A0))
-    return SYM_A0;
-  else if(identifier_string_match(SYM_A1))
-    return SYM_A1;
-  else if(identifier_string_match(SYM_A2))
-    return SYM_A2;
-  else if(identifier_string_match(SYM_A3))
-    return SYM_A3;
-  else if(identifier_string_match(SYM_A4))
-    return SYM_A4;
-  else if(identifier_string_match(SYM_A5))
-    return SYM_A5;
-  else if(identifier_string_match(SYM_A6))
-    return SYM_A6;
-  else if(identifier_string_match(SYM_A7))
-    return SYM_A7;
-  else if(identifier_string_match(SYM_S2))
-    return SYM_S2;
-  else if(identifier_string_match(SYM_S3))
-    return SYM_S3;
-  else if(identifier_string_match(SYM_S4))
-    return SYM_S4;
-  else if(identifier_string_match(SYM_S5))
-    return SYM_S5;
-  else if(identifier_string_match(SYM_S6))
-    return SYM_S6;
-  else if(identifier_string_match(SYM_S7))
-    return SYM_S7;
-  else if(identifier_string_match(SYM_S8))
-    return SYM_S8;
-  else if(identifier_string_match(SYM_S9))
-    return SYM_S9;
-  else if(identifier_string_match(SYM_S10))
-    return SYM_S10;
-  else if(identifier_string_match(SYM_S11))
-    return SYM_S11;
-  else if(identifier_string_match(SYM_T3))
-    return SYM_T3;
-  else if(identifier_string_match(SYM_T4))
-    return SYM_T4;
-  else if(identifier_string_match(SYM_T5))
-    return SYM_T5;
-  else if(identifier_string_match(SYM_T6))
-    return SYM_T6;*/
   else
     return SYM_IDENTIFIER;
+}
+
+uint64_t get_register() {
+  if(identifier_string_match(SYM_ZR))
+    return REG_ZR;
+  else if(identifier_string_match(SYM_RA))
+    return REG_RA;
+  else if(identifier_string_match(SYM_SP))
+    return REG_SP;
+  else if(identifier_string_match(SYM_GP))
+    return REG_GP;
+  else if(identifier_string_match(SYM_TP))
+    return REG_TP;
+  else if(identifier_string_match(SYM_T0))
+    return REG_T0;
+  else if(identifier_string_match(SYM_T1))
+    return REG_T1;
+  else if(identifier_string_match(SYM_T2))
+    return REG_T2;
+  else if(identifier_string_match(SYM_S0))
+    return REG_S0;
+  else if(identifier_string_match(SYM_S1))
+    return REG_S1;
+  else if(identifier_string_match(SYM_A0))
+    return REG_A0;
+  else if(identifier_string_match(SYM_A1))
+    return REG_A1;
+  else if(identifier_string_match(SYM_A2))
+    return REG_A2;
+  else if(identifier_string_match(SYM_A3))
+    return REG_A3;
+  else if(identifier_string_match(SYM_A4))
+    return REG_A4;
+  else if(identifier_string_match(SYM_A5))
+    return REG_A5;
+  else if(identifier_string_match(SYM_A6))
+    return REG_A6;
+  else if(identifier_string_match(SYM_A7))
+    return REG_A7;
+  else if(identifier_string_match(SYM_S2))
+    return REG_S2;
+  else if(identifier_string_match(SYM_S3))
+    return REG_S3;
+  else if(identifier_string_match(SYM_S4))
+    return REG_S4;
+  else if(identifier_string_match(SYM_S5))
+    return REG_S5;
+  else if(identifier_string_match(SYM_S6))
+    return REG_S6;
+  else if(identifier_string_match(SYM_S7))
+    return REG_S7;
+  else if(identifier_string_match(SYM_S8))
+    return REG_S8;
+  else if(identifier_string_match(SYM_S9))
+    return REG_S9;
+  else if(identifier_string_match(SYM_S10))
+    return REG_S10;
+  else if(identifier_string_match(SYM_S11))
+    return REG_S11;
+  else if(identifier_string_match(SYM_T3))
+    return REG_T3;
+  else if(identifier_string_match(SYM_T4))
+    return REG_T4;
+  else if(identifier_string_match(SYM_T5))
+    return REG_T5;
+  else if(identifier_string_match(SYM_T6))
+    return REG_T6;
+  else 
+    return -1;
 }
 
 void get_symbol() {
@@ -4601,75 +4611,6 @@ uint64_t is_invalid_riscv_keyword() {
     return 1;
 }
 
-uint64_t is_register() {
-  if(symbol == SYM_ZERO)
-    return 1;
-  else if(symbol == SYM_RA)
-    return 1;
-  else if(symbol == SYM_SP)
-    return 1;
-  else if(symbol == SYM_GP)
-    return 1;
-  else if(symbol == SYM_TP)
-    return 1;
-  else if(symbol == SYM_T0)
-    return 1;
-  else if(symbol == SYM_T1)
-    return 1;
-  else if(symbol == SYM_T2)
-    return 1;
-  else if(symbol == SYM_S0)
-    return 1;
-  else if(symbol == SYM_S1)
-    return 1;
-  else if(symbol == SYM_A0)
-    return 1;
-  else if(symbol == SYM_A1)
-    return 1;
-  else if(symbol == SYM_A2)
-    return 1;
-  else if(symbol == SYM_A3)
-    return 1;
-  else if(symbol == SYM_A4)
-    return 1;
-  else if(symbol == SYM_A5)
-    return 1;
-  else if(symbol == SYM_A6)
-    return 1;
-  else if(symbol == SYM_A7)
-    return 1;
-  else if(symbol == SYM_S2)
-    return 1;
-  else if(symbol == SYM_S3)
-    return 1;
-  else if(symbol == SYM_S4)
-    return 1;
-  else if(symbol == SYM_S5)
-    return 1;
-  else if(symbol == SYM_S6)
-    return 1;
-  else if(symbol == SYM_S7)
-    return 1;
-  else if(symbol == SYM_S8)
-    return 1;
-  else if(symbol == SYM_S9)
-    return 1;
-  else if(symbol == SYM_S10)
-    return 1;
-  else if(symbol == SYM_S11)
-    return 1;
-  else if(symbol == SYM_T3)
-    return 1;
-  else if(symbol == SYM_T4)
-    return 1;
-  else if(symbol == SYM_T5)
-    return 1;
-  else if(symbol == SYM_T6)
-    return 1;
-  else
-  return 0;
-}
-
 uint64_t is_not_statement() {
   if (symbol == SYM_ASTERISK)
     return 0;
@@ -4763,8 +4704,10 @@ uint64_t get_instruction_type(uint64_t instruction) {
     return INS_TYPE_5;
   else if (instruction == SYM_NOP)
     return INS_TYPE_5;
-  else
+  else if (instruction == SYM_8BYTE)
     return INS_TYPE_6;
+  else 
+    return -1;
 } 
 
 void syntax_error_undeclared_identifier(char* name) {
@@ -4803,7 +4746,7 @@ void type_warning(uint64_t expected, uint64_t found) {
   printf(" found\n");
 }
 
-void compile_asm() {
+void selfie_assemble() {
   uint64_t type;
   
   while (symbol != SYM_EOF) {
@@ -4817,10 +4760,100 @@ void compile_asm() {
 
     type = get_instruction_type(symbol);
 
-    get_symbol();
-
     if(type == INS_TYPE_1) {
+      assemble_type_1();
+    }
+
+    if(type == INS_TYPE_2) {
+      assemble_type_2();
+    }
+
+    if(type == INS_TYPE_3) {
+      assemble_type_3();
+    }
+
+    if(type == INS_TYPE_4) {
+      assemble_type_4();
+    }
+
+    if(type == INS_TYPE_5) {
+      assemble_type_5();
+    }
+
+    if(type == INS_TYPE_6) {
+      assemble_type_6();
+    }
+  }
+}
+
+void assemble_type_1() {
+  uint64_t is_lui;
+  uint64_t reg;
+
+  is_lui = 0;
+
+  if(identifier_string_match(SYM_LUI)) {
+    is_lui = 1;
+  }
+  get_symbol();
+  if(symbol == SYM_IDENTIFIER) {
+    reg = get_register();
+    get_symbol();
+    if(symbol == SYM_COMMA) {
+      get_symbol();
+      integer_is_signed = 0;
+      if(symbol == SYM_MINUS) {
+        integer_is_signed = 1;
+        get_symbol();
+      }
+      if(symbol == SYM_INTEGER) {
+        if(is_lui) {
+          literal = sign_extend(literal, 20);
+          if(integer_is_signed) {
+            emit_lui(reg, -literal);
+          } else {
+            emit_lui(reg, literal);
+          }
+        } else {
+          literal = left_shift(literal, 2);
+          literal = sign_extend(literal, 21);
+          if(integer_is_signed) {
+            emit_jal(reg, -literal);
+          } else {
+            emit_jal(reg, literal);
+          }
+        }
+        get_symbol();
+      } else {
+        syntax_error_unexpected_symbol();
+      }
+    } else {
+    syntax_error_unexpected_symbol();
+  }
+  } else {
+    syntax_error_unexpected_symbol();
+  }
+}
+
+void assemble_type_2() {
+  uint64_t is_addi;
+  uint64_t reg_1;
+  uint64_t reg_2;
+
+  is_addi = 0;
+
+  if(identifier_string_match(SYM_ADDI)) {
+    is_addi = 1;
+  }
+
+  get_symbol();
+  if(symbol == SYM_IDENTIFIER) {
+    reg_1 = get_register();
+    get_symbol();
+    if(symbol == SYM_COMMA) {
+      get_symbol(); 
       if(symbol == SYM_IDENTIFIER) {
+        reg_2 = get_register();
         get_symbol();
         if(symbol == SYM_COMMA) {
           get_symbol();
@@ -4830,125 +4863,214 @@ void compile_asm() {
             get_symbol();
           }
           if(symbol == SYM_INTEGER) {
+            if(is_addi) {
+              if(integer_is_signed) {
+                emit_addi(reg_1, reg_2, -literal);
+              } else {
+                emit_addi(reg_1, reg_2, literal);
+              }
+            } else {
+              literal = left_shift(literal, 2);
+              literal = sign_extend(literal, 13);
+              if(integer_is_signed) {
+                emit_beq(reg_1, reg_2, -literal);
+              } else {
+                emit_beq(reg_1, reg_2, literal);
+              }
+            }
             get_symbol();
           } else {
             syntax_error_unexpected_symbol();
           }
         } else {
-        syntax_error_unexpected_symbol();
-      }
+          syntax_error_unexpected_symbol();
+        }
       } else {
         syntax_error_unexpected_symbol();
       }
+    } else {
+      syntax_error_unexpected_symbol();
     }
+  }
+  else {
+    syntax_error_unexpected_symbol();
+  }
+}
 
-    if(type == INS_TYPE_2) {
-      if(symbol == SYM_IDENTIFIER) {
-        get_symbol();
-        if(symbol == SYM_COMMA) {
-          get_symbol(); 
-          if(symbol == SYM_IDENTIFIER) {
-            get_symbol();
-            if(symbol == SYM_COMMA) {
-              get_symbol();
-              integer_is_signed = 0;
-              if(symbol == SYM_MINUS) {
-                integer_is_signed = 1;
-                get_symbol();
-              }
-              if(symbol == SYM_INTEGER) {
-                get_symbol();
-              } else {
-                syntax_error_unexpected_symbol();
-              }
-            } else {
-              syntax_error_unexpected_symbol();
-            }
-          } else {
-            syntax_error_unexpected_symbol();
-          }
-        } else {
-          syntax_error_unexpected_symbol();
-        }
-      }
-      else {
-        syntax_error_unexpected_symbol();
-      }
-    }
+void assemble_type_3() {
+  uint64_t is_add;
+  uint64_t is_sub;
+  uint64_t is_mul;
+  uint64_t is_divu;
+  uint64_t is_remu;
 
-    if(type == INS_TYPE_3) {
-      if(symbol == SYM_IDENTIFIER) {
-        get_symbol();
-        if(symbol == SYM_COMMA) {
-          get_symbol(); 
-          if(symbol == SYM_IDENTIFIER) {
-            get_symbol();
-            if(symbol == SYM_COMMA) {
-              get_symbol();
-              if(symbol == SYM_IDENTIFIER) {
-                get_symbol();
-              } else {
-                syntax_error_unexpected_symbol();
-              }
-            } else {
-              syntax_error_unexpected_symbol();
-            }
-          } else {
-            syntax_error_unexpected_symbol();
-          }
-        } else {
-          syntax_error_unexpected_symbol();
-        }
-      }
-      else {
-        syntax_error_unexpected_symbol();
-      }
-    }
+  uint64_t reg_1;
+  uint64_t reg_2;
+  uint64_t reg_3;
 
-    if(type == INS_TYPE_4) {
+  is_add = 0;
+  is_sub = 0;
+  is_mul = 0;
+  is_divu = 0;
+  is_remu = 0;
+
+  if(identifier_string_match(SYM_ADD)) {
+    is_add = 1;
+  } else if(identifier_string_match(SYM_SUB)) {
+    is_sub = 1;
+  } else if(identifier_string_match(SYM_MUL)) {
+    is_mul = 1;
+  } else if(identifier_string_match(SYM_DIVU)) {
+    is_divu = 1;
+  } else if(identifier_string_match(SYM_REMU)) {
+    is_remu = 1;
+  }
+  
+  get_symbol();
+  if(symbol == SYM_IDENTIFIER) {
+    reg_1 = get_register();
+    get_symbol();
+    if(symbol == SYM_COMMA) {
+      get_symbol(); 
       if(symbol == SYM_IDENTIFIER) {
+        reg_2 = get_register();
         get_symbol();
         if(symbol == SYM_COMMA) {
           get_symbol();
-          integer_is_signed = 0;
-          if(symbol == SYM_MINUS) {
-            integer_is_signed = 1;
+          if(symbol == SYM_IDENTIFIER) {
+            reg_3 = get_register();
+
+            if(is_add) {
+              emit_add(reg_1, reg_2, reg_3);
+            } else if(is_sub) {
+              emit_sub(reg_1, reg_2, reg_3);
+            } else if(is_mul) {
+              emit_mul(reg_1, reg_2, reg_3);
+            } else if(is_divu) {
+              emit_divu(reg_1, reg_2, reg_3);
+            } else if(is_remu) {
+              emit_remu(reg_1, reg_2, reg_3);
+            } else {
+              emit_sltu(reg_1, reg_2, reg_3);
+            }
+
             get_symbol();
-          }
-          if (symbol == SYM_INTEGER) {
-            get_symbol();
-            if(symbol == SYM_LPARENTHESIS) {
-              get_symbol();
-              if(symbol == SYM_IDENTIFIER) {
-                get_symbol();
-                if(symbol == SYM_RPARENTHESIS)
-                  get_symbol();
-                else
-                  syntax_error_unexpected_symbol();
-              } else 
-                syntax_error_unexpected_symbol();
-            } else
-              syntax_error_unexpected_symbol();
           } else {
             syntax_error_unexpected_symbol();
           }
-        } 
-        else 
+        } else {
           syntax_error_unexpected_symbol();
-      } else 
-        syntax_error_unexpected_symbol();
-    }
-
-    if(type == INS_TYPE_5) {
-    }
-
-    if(type == INS_TYPE_6) {
-      if(symbol == SYM_INTEGER) {
-        get_symbol();
+        }
       } else {
         syntax_error_unexpected_symbol();
       }
+    } else {
+      syntax_error_unexpected_symbol();
     }
+  }
+  else {
+    syntax_error_unexpected_symbol();
+  }
+}
+
+void assemble_type_4() {
+  uint64_t is_ld;
+  uint64_t is_sd;
+
+  uint64_t reg_1;
+  uint64_t reg_2;
+  uint64_t imm;
+
+  is_ld = 0;
+  is_sd = 0;
+
+  if(identifier_string_match(SYM_LD)) {
+    is_ld = 1;
+  } else if(identifier_string_match(SYM_SD)) {
+    is_sd = 1;
+  }
+  
+  get_symbol();
+  if(symbol == SYM_IDENTIFIER) {
+    reg_1 = get_register();
+    get_symbol();
+    if(symbol == SYM_COMMA) {
+      get_symbol();
+      integer_is_signed = 0;
+      if(symbol == SYM_MINUS) {
+        integer_is_signed = 1;
+        get_symbol();
+      }
+      if (symbol == SYM_INTEGER) {
+        imm = literal;
+        get_symbol();
+        if(symbol == SYM_LPARENTHESIS) {
+          get_symbol();
+          if(symbol == SYM_IDENTIFIER) {
+            reg_2 = get_register();
+            get_symbol();
+            if(symbol == SYM_RPARENTHESIS) {
+              if(is_ld) {
+                if(integer_is_signed) {
+                  emit_load(reg_1, reg_2, -imm);
+                } else {
+                  emit_load(reg_1, reg_2, imm);
+                }
+              } else if(is_sd) {
+                if(integer_is_signed) {
+                  emit_store(reg_2, -imm, reg_1);
+                } else {
+                  emit_store(reg_2, imm, reg_1);
+                }
+              } else {
+                if(integer_is_signed) {
+                  emit_jalr(reg_1, reg_2, -imm);
+                } else {
+                  emit_jalr(reg_1, reg_2, imm);
+                }
+              }
+                get_symbol();
+            }
+            else
+              syntax_error_unexpected_symbol();
+          } else 
+            syntax_error_unexpected_symbol();
+        } else
+          syntax_error_unexpected_symbol();
+      } else {
+        syntax_error_unexpected_symbol();
+      }
+    } 
+    else 
+      syntax_error_unexpected_symbol();
+  } else 
+    syntax_error_unexpected_symbol();
+}
+
+void assemble_type_5() {
+  uint64_t is_ecall;
+
+  is_ecall = 0;
+
+  if(identifier_string_match(SYM_ECALL)) {
+    is_ecall = 1;
+  }
+
+  if(is_ecall) {
+    emit_ecall();
+  }
+
+  get_symbol();
+} 
+
+void assemble_type_6() {
+  get_symbol();
+  if(symbol == SYM_INTEGER) {
+    data_size = data_size + WORDSIZE;
+    emit_data_word(literal, -data_size, line_number);
+    get_symbol();
+  } else {
+    syntax_error_unexpected_symbol();
   }
 }
 
@@ -6884,7 +7006,7 @@ void selfie_compile() {
       reset_parser();
 
       if(is_asm) {
-        compile_asm();
+        selfie_assemble();
       } else {
         compile_cstar();
       }
