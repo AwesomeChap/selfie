@@ -2500,8 +2500,8 @@ uint64_t handle_division_by_zero(uint64_t* context);
 uint64_t handle_timer(uint64_t* context);
 uint64_t handle_exception(uint64_t* context);
 
-uint64_t mipster(uint64_t* to_context);
-uint64_t hypster(uint64_t* to_context);
+uint64_t mipster(uint64_t* to_context, uint64_t no_of_concurrent_processes);
+uint64_t hypster(uint64_t* to_context, uint64_t no_of_concurrent_processes);
 
 uint64_t mixter(uint64_t* to_context, uint64_t mix);
 
@@ -2509,7 +2509,7 @@ uint64_t minmob(uint64_t* to_context);
 uint64_t minster(uint64_t* to_context);
 uint64_t mobster(uint64_t* to_context);
 
-uint64_t selfie_run(uint64_t machine);
+uint64_t selfie_run(uint64_t machine, uint64_t no_of_concurrent_processes);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -12395,11 +12395,30 @@ uint64_t handle_exception(uint64_t* context) {
   }
 }
 
-uint64_t mipster(uint64_t* to_context) {
+uint64_t mipster(uint64_t* to_context, uint64_t no_of_concurrent_processes) {
   uint64_t timeout;
   uint64_t* from_context;
+  uint64_t n;
+  uint64_t* new_context;
+  uint64_t* context;
 
-  timeout = TIMESLICE;
+  n = 0;
+
+  timeout = 1;
+
+  while (n < no_of_concurrent_processes - 1) {
+    new_context = create_context(MY_CONTEXT, 0);
+    boot_loader(new_context);
+
+    n = n + 1;
+  }
+
+  context = used_contexts;
+
+  while(context != (uint64_t*) 0) {  
+    to_context = context;
+    context = get_next_context(context);
+  }
 
   while (1) {
     from_context = mipster_switch(to_context, timeout);
@@ -12409,18 +12428,19 @@ uint64_t mipster(uint64_t* to_context) {
       to_context = get_parent(from_context);
 
       timeout = TIMEROFF;
-    } else if (handle_exception(from_context) == EXIT)
+    } else if (handle_exception(from_context) == EXIT) {
       return get_exit_code(from_context);
+    }
     else {
       // TODO: scheduler should go here
       to_context = from_context;
 
-      timeout = TIMESLICE;
+      timeout = 1;
     }
   }
 }
 
-uint64_t hypster(uint64_t* to_context) {
+uint64_t hypster(uint64_t* to_context, uint64_t no_of_concurrent_processes) {
   uint64_t* from_context;
 
   while (1) {
@@ -12539,7 +12559,7 @@ uint64_t mobster(uint64_t* to_context) {
   return minmob(to_context);
 }
 
-uint64_t selfie_run(uint64_t machine) {
+uint64_t selfie_run(uint64_t machine, uint64_t no_of_concurrent_processes) {
   uint64_t exit_code;
 
   if (code_size == 0) {
@@ -12576,7 +12596,11 @@ uint64_t selfie_run(uint64_t machine) {
   reset_profiler();
   reset_microkernel();
 
-  init_memory(atoi(peek_argument(0)));
+  if(no_of_concurrent_processes > 1) {
+    init_memory(4);
+  } else {
+    init_memory(atoi(peek_argument(0)));
+  }
 
   current_context = create_context(MY_CONTEXT, 0);
 
@@ -12612,9 +12636,9 @@ uint64_t selfie_run(uint64_t machine) {
   printf("\n%s: >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n\n", selfie_name);
 
   if (machine == MIPSTER)
-    exit_code = mipster(current_context);
+    exit_code = mipster(current_context, no_of_concurrent_processes);
   else if (machine == HYPSTER)
-    exit_code = hypster(current_context);
+    exit_code = hypster(current_context, no_of_concurrent_processes);
   else if (machine == MINSTER)
     exit_code = minster(current_context);
   else if (machine == MOBSTER)
@@ -12746,19 +12770,23 @@ uint64_t selfie(uint64_t extras) {
         selfie_load();
       else if (extras == 0) {
         if (string_compare(argument, "-m"))
-          return selfie_run(MIPSTER);
+          return selfie_run(MIPSTER, 1);
+        else if (string_compare(argument, "-x"))
+          return selfie_run(MIPSTER, atoi(get_argument()));
         else if (string_compare(argument, "-d"))
-          return selfie_run(DIPSTER);
+          return selfie_run(DIPSTER, 1);
         else if (string_compare(argument, "-r"))
-          return selfie_run(RIPSTER);
+          return selfie_run(RIPSTER, 1);
         else if (string_compare(argument, "-y"))
-          return selfie_run(HYPSTER);
+          return selfie_run(HYPSTER, 1);
+        else if (string_compare(argument, "-z"))
+          return selfie_run(HYPSTER, atoi(get_argument()));
         else if (string_compare(argument, "-min"))
-          return selfie_run(MINSTER);
+          return selfie_run(MINSTER, 1);
         else if (string_compare(argument, "-mob"))
-          return selfie_run(MOBSTER);
+          return selfie_run(MOBSTER, 1);
         else if (string_compare(argument, "-L1"))
-          return selfie_run(CAPSTER);
+          return selfie_run(CAPSTER, 1);
         else
           return EXITCODE_BADARGUMENTS;
       } else
