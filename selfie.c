@@ -2550,6 +2550,8 @@ uint64_t* MACHINES; // named machines
 uint64_t DIPSTER = 5;
 uint64_t RIPSTER = 6;
 uint64_t CAPSTER = 7;
+uint64_t CONCURRENT_MIPSTER = 8;
+uint64_t CONCURRENT_HYPSTER = 9;
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -12398,28 +12400,26 @@ uint64_t handle_exception(uint64_t* context) {
 uint64_t mipster(uint64_t* to_context, uint64_t no_of_concurrent_processes) {
   uint64_t timeout;
   uint64_t* from_context;
-  uint64_t n;
   uint64_t* new_context;
-  uint64_t* context;
+  uint64_t i;
+  uint64_t* to_contexts;
 
-  n = 0;
+  to_contexts = smalloc(no_of_concurrent_processes * SIZEOFUINT);
 
-  timeout = 1;
+  timeout = TIMESLICE;
 
-  while (n < no_of_concurrent_processes - 1) {
+  *(to_contexts + 0) = (uint64_t) to_context;
+  i = 1;
+  while (i < no_of_concurrent_processes) {
     new_context = create_context(MY_CONTEXT, 0);
     boot_loader(new_context);
-
-    n = n + 1;
+    *(to_contexts + i) = (uint64_t) new_context;
+    i = i + 1;
   }
 
-  context = used_contexts;
-
-  while(context != (uint64_t*) 0) {  
-    to_context = context;
-    context = get_next_context(context);
-  }
-
+  // starting from the first process
+  to_context = (uint64_t*) *(to_contexts + 0);
+  i = 0;
   while (1) {
     from_context = mipster_switch(to_context, timeout);
 
@@ -12432,25 +12432,64 @@ uint64_t mipster(uint64_t* to_context, uint64_t no_of_concurrent_processes) {
       return get_exit_code(from_context);
     }
     else {
-      // TODO: scheduler should go here
-      to_context = from_context;
+      // Round robin scheduler
 
-      timeout = 1;
+      // saving from_context 
+      *(to_contexts + i) = (uint64_t) from_context;
+      i = i + 1;
+
+      // going  back to the first process
+      if(i == no_of_concurrent_processes) {
+        i = 0;
+      }
+
+      // iterating to the next process
+      to_context = (uint64_t*) *(to_contexts + i);
+
+      timeout = TIMESLICE;
     }
   }
 }
 
 uint64_t hypster(uint64_t* to_context, uint64_t no_of_concurrent_processes) {
   uint64_t* from_context;
+  uint64_t* new_context;
+  uint64_t i;
+  uint64_t* to_contexts;
 
+  to_contexts = smalloc(no_of_concurrent_processes * SIZEOFUINT);
+
+  *(to_contexts + 0) = (uint64_t) to_context;
+  i = 1;
+  while (i < no_of_concurrent_processes) {
+    new_context = create_context(MY_CONTEXT, 0);
+    boot_loader(new_context);
+    *(to_contexts + i) = (uint64_t) new_context;
+    i = i + 1;
+  }
+
+  // starting from the first process
+  to_context = (uint64_t*) *(to_contexts + 0);
+  i = 0;
   while (1) {
     from_context = hypster_switch(to_context, TIMESLICE);
 
     if (handle_exception(from_context) == EXIT)
       return get_exit_code(from_context);
     else
-      // TODO: scheduler should go here
-      to_context = from_context;
+      // Round robin scheduler
+
+      // saving from_context 
+      *(to_contexts + i) = (uint64_t) from_context;
+      i = i + 1;
+
+      // going  back to the first process
+      if(i == no_of_concurrent_processes) {
+        i = 0;
+      }
+
+      // iterating to the next process
+      to_context = (uint64_t*) *(to_contexts + i);
   }
 }
 
@@ -12561,6 +12600,9 @@ uint64_t mobster(uint64_t* to_context) {
 
 uint64_t selfie_run(uint64_t machine, uint64_t no_of_concurrent_processes) {
   uint64_t exit_code;
+  uint64_t fix_init_memory_size;
+  
+  fix_init_memory_size = 0;
 
   if (code_size == 0) {
     printf("%s: nothing to run, debug, or host\n", selfie_name);
@@ -12590,13 +12632,24 @@ uint64_t selfie_run(uint64_t machine, uint64_t no_of_concurrent_processes) {
     L1_CACHE_ENABLED = 1;
 
     machine = MIPSTER;
-  }
+  } else if (machine == CONCURRENT_MIPSTER) {
+    fix_init_memory_size = 1;
+    machine = MIPSTER;
+  } else if (machine == CONCURRENT_HYPSTER) {
+    fix_init_memory_size = 1;
+    machine = HYPSTER;
+    if (OS != SELFIE) {
+      printf("%s: hypster only runs on mipster\n", selfie_name);
+
+      return EXITCODE_BADARGUMENTS;
+    }
+  } 
 
   reset_interpreter();
   reset_profiler();
   reset_microkernel();
 
-  if(no_of_concurrent_processes > 1) {
+  if(fix_init_memory_size) {
     init_memory(4);
   } else {
     init_memory(atoi(peek_argument(0)));
@@ -12772,7 +12825,7 @@ uint64_t selfie(uint64_t extras) {
         if (string_compare(argument, "-m"))
           return selfie_run(MIPSTER, 1);
         else if (string_compare(argument, "-x"))
-          return selfie_run(MIPSTER, atoi(get_argument()));
+          return selfie_run(CONCURRENT_MIPSTER, atoi(get_argument()));
         else if (string_compare(argument, "-d"))
           return selfie_run(DIPSTER, 1);
         else if (string_compare(argument, "-r"))
@@ -12780,7 +12833,7 @@ uint64_t selfie(uint64_t extras) {
         else if (string_compare(argument, "-y"))
           return selfie_run(HYPSTER, 1);
         else if (string_compare(argument, "-z"))
-          return selfie_run(HYPSTER, atoi(get_argument()));
+          return selfie_run(CONCURRENT_HYPSTER, atoi(get_argument()));
         else if (string_compare(argument, "-min"))
           return selfie_run(MINSTER, 1);
         else if (string_compare(argument, "-mob"))
