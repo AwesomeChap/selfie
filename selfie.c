@@ -1379,6 +1379,14 @@ void reset_binary_counters() {
 void emit_exit();
 void implement_exit(uint64_t* context);
 
+void emit_fork();
+uint64_t fork();
+void implement_fork(uint64_t* context);
+
+void emit_wait();
+void wait(uint64_t* wstatus);
+void implement_wait(uint64_t* context);
+
 void     emit_read();
 uint64_t copy_buffer(uint64_t* context, uint64_t vbuffer, uint64_t* buffer, uint64_t size, uint64_t upload);
 void     implement_read(uint64_t* context);
@@ -1402,12 +1410,16 @@ uint64_t debug_read  = 0;
 uint64_t debug_write = 0;
 uint64_t debug_open  = 0;
 uint64_t debug_brk   = 0;
+uint64_t debuf fork  = 0;
+uint64_t debug_wait  = 0;
 
 uint64_t SYSCALL_EXIT   = 93;
 uint64_t SYSCALL_READ   = 63;
 uint64_t SYSCALL_WRITE  = 64;
 uint64_t SYSCALL_OPENAT = 56;
 uint64_t SYSCALL_BRK    = 214;
+uint64_t SYSCALL_FORK   = 57;
+uint64_t SYSCALL_WAIT   = 260;
 
 /* DIRFD_AT_FDCWD corresponds to AT_FDCWD in fcntl.h and
    is passed as first argument of the openat system call
@@ -2116,6 +2128,8 @@ void reset_profiler() {
 // | 30 | gcs counter     | number of gc runs in gc period
 // | 31 | gc enabled      | flag indicating whether to use gc or not
 // +----+-----------------+
+// | 32 | p id            | process id of context
+// +----+-----------------+
 
 // number of entries of a machine context:
 // 14 uint64_t + 6 uint64_t* + 1 char* + 7 uint64_t + 2 uint64_t* + 2 uint64_t entries
@@ -2164,6 +2178,8 @@ uint64_t free_list_head(uint64_t* context) { return (uint64_t) (context + 29); }
 uint64_t gcs_in_period(uint64_t* context)  { return (uint64_t) (context + 30); }
 uint64_t use_gc_kernel(uint64_t* context)  { return (uint64_t) (context + 31); }
 
+uint64_t p_id(uint64_t* context)  { return (uint64_t) (context + 32); }
+
 uint64_t* get_next_context(uint64_t* context)    { return (uint64_t*) *context; }
 uint64_t* get_prev_context(uint64_t* context)    { return (uint64_t*) *(context + 1); }
 uint64_t  get_pc(uint64_t* context)              { return             *(context + 2); }
@@ -2199,6 +2215,8 @@ uint64_t* get_free_list_head(uint64_t* context) { return (uint64_t*) *(context +
 uint64_t  get_gcs_in_period(uint64_t* context)  { return             *(context + 30); }
 uint64_t  get_use_gc_kernel(uint64_t* context)  { return             *(context + 31); }
 
+uint64_t  get_p_id(uint64_t* context)           { return             *(context + 32); }
+
 void set_next_context(uint64_t* context, uint64_t* next)     { *context        = (uint64_t) next; }
 void set_prev_context(uint64_t* context, uint64_t* prev)     { *(context + 1)  = (uint64_t) prev; }
 void set_pc(uint64_t* context, uint64_t pc)                  { *(context + 2)  = pc; }
@@ -2233,6 +2251,8 @@ void set_used_list_head(uint64_t* context, uint64_t* used_list_head) { *(context
 void set_free_list_head(uint64_t* context, uint64_t* free_list_head) { *(context + 29) = (uint64_t) free_list_head; }
 void set_gcs_in_period(uint64_t* context, uint64_t gcs)              { *(context + 30) = gcs; }
 void set_use_gc_kernel(uint64_t* context, uint64_t use)              { *(context + 31) = use; }
+
+void set_p_id(uint64_t* context, uint64_t process_id)       { *(context + 32) = process_id; }
 
 // -----------------------------------------------------------------
 // ---------------------------- MEMORY -----------------------------
@@ -6950,6 +6970,8 @@ void selfie_compile() {
   // emit system call wrappers
   // exit code must be first
   emit_exit();
+  emit_wait();
+  emit_fork();
   emit_read();
   emit_write();
   emit_open();
@@ -8205,6 +8227,124 @@ void implement_exit(uint64_t* context) {
   signed_int_exit_code = *(get_regs(context) + REG_A0);
 
   set_exit_code(context, sign_shrink(signed_int_exit_code, SYSCALL_BITWIDTH));
+}
+
+void emit_wait() {
+  create_symbol_table_entry(GLOBAL_TABLE, string_copy("wait"),
+    0, PROCEDURE, UINT64_T, 1, code_size);
+
+  // load child status pointer
+  emit_load(REG_A0, REG_SP, 0);
+
+  // remove the child status pointer from the stack
+  emit_addi(REG_SP, REG_SP, WORDSIZE);
+
+  // load the correct syscall number and invoke syscall
+  emit_addi(REG_A7, REG_ZR, SYSCALL_WAIT);
+
+  emit_ecall();
+
+  // jump back to caller, return value is in REG_A0
+  emit_jalr(REG_ZR, REG_RA, 0);
+}
+
+void wait(uint64_t* wstatus) {}
+
+void implement_wait(uint64_t* context) {
+  uint64_t* wstatus = 0;
+
+  if (debug_syscalls) {
+    printf("(wait): ");
+    print_register_value(REG_A0);
+    printf(" |- ");
+    print_register_value(REG_A0);
+  }
+
+  wait(wstatus);
+
+  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+
+  if (debug_syscalls) {
+    printf(" -> ");
+    print_register_value(REG_A0);
+    println();
+  }
+}
+
+void emit_fork() {
+  create_symbol_table_entry(GLOBAL_TABLE, string_copy("fork"),
+    0, PROCEDURE, UINT64_T, 1, code_size);
+
+  // load the correct syscall number and invoke syscall
+  emit_addi(REG_A7, REG_ZR, SYSCALL_FORK);
+
+  emit_ecall();
+
+  // jump back to caller, return value is in REG_A0
+  emit_jalr(REG_ZR, REG_RA, 0);
+}
+
+uint64_t fork() {
+  uint64_t* parent;
+  uint64_t* child;
+  uint64_t* context;
+
+  parent = get_parent(context);
+
+  // loop through parents and increase the respective process ids
+
+  while(parent != 0) {
+    parent = get_parent(context);
+  }
+
+  parent = current_context;
+
+  // create child context by copying parent context
+  child = create_context(parent, 0);
+
+  // if (child == 0)
+  //   // if context id is 0, then we are the child
+  //   return 0;
+  // else {
+  //   // otherwise, we are the parent
+
+  //   // remember child context id
+  //   set_child(parent, child);
+
+  //   // restore return value for parent process to child context id
+  //   *(get_regs(parent) + REG_A0) = child;
+
+  //   // return child context id to parent process
+  //   return child;
+  // }
+
+  return 0;
+}
+
+voud implement_fork(uint64_t* context) {
+  if (debug_syscalls) {
+    printf("(fork): ");
+    print_register_value(REG_A0);
+    printf(" |- ");
+    print_register_value(REG_A0);
+  }
+
+   *(get_regs(context) + REG_A0) = fork();
+
+  if (signed_less_than(*(get_regs(context) + REG_A0), 0)) {
+    if (debug_syscalls)
+      printf("%s: process id must be positive integer\n", selfie_name);
+    return;
+  }
+
+  set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
+
+  if (debug_syscalls) {
+    printf(" -> ");
+    print_register_value(REG_A0);
+    println();
+  }
+
 }
 
 void emit_read() {
@@ -9999,15 +10139,20 @@ void do_ecall() {
       implement_switch();
     }
   else {
-    read_register(REG_A0);
+    if(*(registers + REG_A7) != SYSCALL_FORK)
+      read_register(REG_A0);
 
     if (*(registers + REG_A7) != SYSCALL_EXIT) {
-      if (*(registers + REG_A7) != SYSCALL_BRK) {
-        read_register(REG_A1);
-        read_register(REG_A2);
+        if(*(registers + REG_A7) != SYSCALL_FORK) {
+          if(*(registers + REG_A7) != SYSCALL_WAIT) {
+            if (*(registers + REG_A7) != SYSCALL_BRK) {
+            read_register(REG_A1);
+            read_register(REG_A2);
 
-        if (*(registers + REG_A7) == SYSCALL_OPENAT)
-          read_register(REG_A3);
+            if (*(registers + REG_A7) == SYSCALL_OPENAT)
+              read_register(REG_A3);
+          }
+        }
       }
 
       write_register(REG_A0);
@@ -12305,6 +12450,10 @@ uint64_t handle_system_call(uint64_t* context) {
     implement_write(context);
   else if (a7 == SYSCALL_OPENAT)
     implement_openat(context);
+  else if (a7 == SYSCALL_FORK)
+    implement_fork(context);
+  else if (a7 == SYSCALL_WAIT)
+    implement_wait(context);
   else if (a7 == SYSCALL_EXIT) {
     implement_exit(context);
 
