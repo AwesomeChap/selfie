@@ -1384,7 +1384,7 @@ uint64_t fork();
 void implement_fork(uint64_t* context);
 
 void emit_wait();
-void wait(uint64_t* wstatus);
+uint64_t wait(uint64_t* wstatus);
 void implement_wait(uint64_t* context);
 
 void     emit_read();
@@ -1410,7 +1410,7 @@ uint64_t debug_read  = 0;
 uint64_t debug_write = 0;
 uint64_t debug_open  = 0;
 uint64_t debug_brk   = 0;
-uint64_t debuf fork  = 0;
+uint64_t debug_fork  = 0;
 uint64_t debug_wait  = 0;
 
 uint64_t SYSCALL_EXIT   = 93;
@@ -2449,6 +2449,7 @@ uint64_t* delete_context(uint64_t* context, uint64_t* from);
 void init_context(uint64_t* context, uint64_t* parent, uint64_t* vctxt);
 
 uint64_t* create_context(uint64_t* parent, uint64_t* vctxt);
+uint64_t* clone_context(uint64_t* parent, uint64_t* vctxt);
 uint64_t* find_context(uint64_t* parent, uint64_t* vctxt);
 uint64_t* cache_context(uint64_t* vctxt);
 
@@ -2475,6 +2476,7 @@ void map_unmapped_pages(uint64_t* context);
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 uint64_t debug_create = 0;
+uint64_t debug_copy = 0;
 uint64_t debug_map    = 0;
 
 // ------------------------ GLOBAL VARIABLES -----------------------
@@ -6190,6 +6192,10 @@ uint64_t is_boot_level_0_only_procedure(char* procedure) {
     return 1;
   else if (string_compare(procedure, "hypster_switch"))
     return 1;
+  else if (string_compare(procedure, "wait"))
+    return 1;
+  else if (string_compare(procedure, "fork"))
+    return 1;
   else if (GC_ON) {
     if (string_compare(procedure, "fetch_stack_pointer"))
       return 1;
@@ -8248,10 +8254,15 @@ void emit_wait() {
   emit_jalr(REG_ZR, REG_RA, 0);
 }
 
-void wait(uint64_t* wstatus) {}
+uint64_t wait(uint64_t* wstatus) {
+  printf("%s: missing implementation for wait(%p)\n", selfie_name, (char*) wstatus);
+  return (uint64_t) wstatus;
+}
 
 void implement_wait(uint64_t* context) {
-  uint64_t* wstatus = 0;
+  uint64_t* wstatus;
+
+  wstatus = (uint64_t *) 0;
 
   if (debug_syscalls) {
     printf("(wait): ");
@@ -8260,20 +8271,20 @@ void implement_wait(uint64_t* context) {
     print_register_value(REG_A0);
   }
 
-  wait(wstatus);
+  *(get_regs(context) + REG_A0) = wait(wstatus);
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 
   if (debug_syscalls) {
     printf(" -> ");
     print_register_value(REG_A0);
-    println();
+    printf(" |- ->\n");
   }
 }
 
 void emit_fork() {
   create_symbol_table_entry(GLOBAL_TABLE, string_copy("fork"),
-    0, PROCEDURE, UINT64_T, 1, code_size);
+    0, PROCEDURE, UINT64_T, 0, code_size);
 
   // load the correct syscall number and invoke syscall
   emit_addi(REG_A7, REG_ZR, SYSCALL_FORK);
@@ -8285,43 +8296,10 @@ void emit_fork() {
 }
 
 uint64_t fork() {
-  uint64_t* parent;
-  uint64_t* child;
-  uint64_t* context;
-
-  parent = get_parent(context);
-
-  // loop through parents and increase the respective process ids
-
-  while(parent != 0) {
-    parent = get_parent(context);
-  }
-
-  parent = current_context;
-
-  // create child context by copying parent context
-  child = create_context(parent, 0);
-
-  // if (child == 0)
-  //   // if context id is 0, then we are the child
-  //   return 0;
-  // else {
-  //   // otherwise, we are the parent
-
-  //   // remember child context id
-  //   set_child(parent, child);
-
-  //   // restore return value for parent process to child context id
-  //   *(get_regs(parent) + REG_A0) = child;
-
-  //   // return child context id to parent process
-  //   return child;
-  // }
-
-  return 0;
+  return get_p_id(current_context);
 }
 
-voud implement_fork(uint64_t* context) {
+void implement_fork(uint64_t* context) {
   if (debug_syscalls) {
     printf("(fork): ");
     print_register_value(REG_A0);
@@ -8329,7 +8307,7 @@ voud implement_fork(uint64_t* context) {
     print_register_value(REG_A0);
   }
 
-   *(get_regs(context) + REG_A0) = fork();
+  *(get_regs(context) + REG_A0) = fork();
 
   if (signed_less_than(*(get_regs(context) + REG_A0), 0)) {
     if (debug_syscalls)
@@ -11879,6 +11857,9 @@ void init_context(uint64_t* context, uint64_t* parent, uint64_t* vctxt) {
   set_free_list_head(context, (uint64_t*) 0);
   set_gcs_in_period(context, 0);
   set_use_gc_kernel(context, GC_DISABLED);
+
+  // every newly created context is initially a child context
+  set_p_id(context, 0);
 }
 
 uint64_t* create_context(uint64_t* parent, uint64_t* vctxt) {
@@ -11890,6 +11871,96 @@ uint64_t* create_context(uint64_t* parent, uint64_t* vctxt) {
 
   if (debug_create)
     printf("%s: parent context %s created child context %s\n", selfie_name,
+      get_name(parent), get_name(used_contexts));
+
+  return context;
+}
+
+uint64_t* clone_context(uint64_t* parent, uint64_t* vctxt) {
+  uint64_t* context;
+  uint64_t lo;
+  uint64_t hi;
+  uint64_t frame;
+
+  context = new_context();
+
+  // copy machine state
+  set_pc(context, get_pc(parent));
+  set_p_id(context, 0);
+  set_regs(context, get_regs(parent));
+
+  if (PAGETABLETREE == 0)
+    set_pt(context, zmalloc(NUMBEROFPAGES * sizeof(uint64_t*)));
+  else
+    set_pt(context, zmalloc(NUMBEROFPAGES / NUMBEROFLEAFPTES * sizeof(uint64_t*)));
+
+  // copying stack segment
+  lo = page_of_virtual_address(*(get_regs(context) + REG_SP));
+  hi = page_of_virtual_address(HIGHESTVIRTUALADDRESS);
+
+  while(lo < hi) {
+    if(is_virtual_address_mapped(get_pt(parent), lo)) {
+      frame = load_virtual_memory(get_pt(parent), lo);
+      map_and_store(context, lo, frame);
+    }
+    lo = lo + 1;
+  }
+
+  set_lowest_hi_page(context, lo);
+  set_highest_hi_page(context, hi);
+
+  // copying code + data segment
+  lo = get_code_seg_start(parent);
+  hi = get_program_break(parent);
+
+  while(lo < hi) {
+    if(is_virtual_address_mapped(get_pt(parent), lo)) {
+      frame = load_virtual_memory(get_pt(parent), lo);
+      map_and_store(context, lo, frame);
+    }
+    lo = lo + 1;
+  }
+  
+  set_lowest_lo_page(context, lo);
+  set_highest_lo_page(context, hi);
+
+  if(parent != MY_CONTEXT) {
+    set_code_seg_start(context, get_code_seg_start(parent));
+    set_code_seg_size(context, get_code_seg_size(parent));
+    set_data_seg_start(context, get_data_seg_start(parent));
+    set_data_seg_size(context, get_data_seg_size(parent));
+    set_heap_seg_start(context, get_heap_seg_start(parent));
+
+    down_load_string(context, load_virtual_memory(get_pt(parent), name(vctxt)), get_name(parent));
+
+    set_name(context, get_name(parent));
+  } else {
+    set_exception(context, get_exception(parent));
+    set_fault(context, get_fault(parent));
+
+    set_exit_code(context, get_exit_code(parent));
+  }
+
+  set_parent(context, parent);
+  set_virtual_context(parent, vctxt);
+
+  // copy profile
+  set_ic_all(context, get_ic_all(parent));
+  set_lc_malloc(context, get_lc_malloc(parent));
+  set_ec_syscall(context, get_ec_syscall(parent));
+  set_ec_page_fault(context, get_ec_page_fault(parent));
+  set_ec_timer(context, get_ec_timer(parent));
+  set_mc_stack_peak(context, get_mc_stack_peak(parent));
+  set_mc_mapped_heap(context, get_mc_mapped_heap(parent));
+
+  // copy garbage collector state
+  set_used_list_head(context, get_used_list_head(parent));
+  set_free_list_head(context, get_free_list_head(parent));
+  set_gcs_in_period(context, get_gcs_in_period(parent));
+  set_use_gc_kernel(context, get_use_gc_kernel(parent));
+
+  if (debug_copy)
+    printf("%s: parent context %s copied child context %s\n", selfie_name,
       get_name(parent), get_name(used_contexts));
 
   return context;
@@ -12431,6 +12502,8 @@ void boot_loader(uint64_t* context) {
 }
 
 uint64_t handle_system_call(uint64_t* context) {
+  uint64_t* child_context;
+  uint64_t* parent_context;
   uint64_t a7;
 
   set_exception(context, EXCEPTION_NOEXCEPTION);
@@ -12450,8 +12523,21 @@ uint64_t handle_system_call(uint64_t* context) {
     implement_write(context);
   else if (a7 == SYSCALL_OPENAT)
     implement_openat(context);
-  else if (a7 == SYSCALL_FORK)
+  else if (a7 == SYSCALL_FORK) {
+    // clonning parent context
+    child_context = clone_context(context, 0);
+    boot_loader(child_context);
+
+    // updating process id of the parent(s)
+    parent_context = get_parent(child_context);
+    while(parent_context != (uint64_t*) 0) {
+      set_p_id(parent_context, get_p_id(parent_context) + 1);
+      parent_context = get_parent(parent_context);
+    }  
+
     implement_fork(context);
+    implement_fork(child_context);
+  }
   else if (a7 == SYSCALL_WAIT)
     implement_wait(context);
   else if (a7 == SYSCALL_EXIT) {
