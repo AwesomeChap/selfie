@@ -1380,11 +1380,9 @@ void emit_exit();
 void implement_exit(uint64_t* context);
 
 void emit_fork();
-uint64_t fork();
 void implement_fork(uint64_t* context);
 
 void emit_wait();
-uint64_t wait(uint64_t* wstatus);
 void implement_wait(uint64_t* context);
 
 void     emit_read();
@@ -2134,7 +2132,7 @@ void reset_profiler() {
 // number of entries of a machine context:
 // 14 uint64_t + 6 uint64_t* + 1 char* + 7 uint64_t + 2 uint64_t* + 2 uint64_t entries
 // extended in the symbolic execution engine and the Boehm garbage collector
-uint64_t CONTEXTENTRIES = 32;
+uint64_t CONTEXTENTRIES = 33;
 
 uint64_t* allocate_context(); // declaration avoids warning in the Boehm garbage collector
 
@@ -8254,15 +8252,10 @@ void emit_wait() {
   emit_jalr(REG_ZR, REG_RA, 0);
 }
 
-uint64_t wait(uint64_t* wstatus) {
-  printf("%s: missing implementation for wait(%p)\n", selfie_name, (char*) wstatus);
-  return (uint64_t) wstatus;
-}
-
 void implement_wait(uint64_t* context) {
-  uint64_t* wstatus;
+  // uint64_t* wstatus;
 
-  wstatus = (uint64_t *) 0;
+  // wstatus = (uint64_t *) 0;
 
   if (debug_syscalls) {
     printf("(wait): ");
@@ -8271,7 +8264,8 @@ void implement_wait(uint64_t* context) {
     print_register_value(REG_A0);
   }
 
-  *(get_regs(context) + REG_A0) = wait(wstatus);
+  // return exit code of child process
+  *(get_regs(context) + REG_A0) = 0;
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 
@@ -8295,11 +8289,9 @@ void emit_fork() {
   emit_jalr(REG_ZR, REG_RA, 0);
 }
 
-uint64_t fork() {
-  return get_p_id(current_context);
-}
-
 void implement_fork(uint64_t* context) {
+  printf("%s: implement_fork start, pid: %lu\n", selfie_name, get_p_id(context));
+
   if (debug_syscalls) {
     printf("(fork): ");
     print_register_value(REG_A0);
@@ -8307,7 +8299,7 @@ void implement_fork(uint64_t* context) {
     print_register_value(REG_A0);
   }
 
-  *(get_regs(context) + REG_A0) = fork();
+  *(get_regs(context) + REG_A0) = get_p_id(context);
 
   if (signed_less_than(*(get_regs(context) + REG_A0), 0)) {
     if (debug_syscalls)
@@ -8317,12 +8309,13 @@ void implement_fork(uint64_t* context) {
 
   set_pc(context, get_pc(context) + INSTRUCTIONSIZE);
 
+  printf("%s: implement_fork end, pid: %lu\n", selfie_name, get_p_id(context));
+
   if (debug_syscalls) {
     printf(" -> ");
     print_register_value(REG_A0);
     println();
   }
-
 }
 
 void emit_read() {
@@ -11910,8 +11903,8 @@ uint64_t* clone_context(uint64_t* parent, uint64_t* vctxt) {
   set_highest_hi_page(context, hi);
 
   // copying code + data segment
-  lo = get_code_seg_start(parent);
-  hi = get_program_break(parent);
+  lo = page_of_virtual_address(get_code_seg_start(parent));
+  hi = page_of_virtual_address(get_program_break(parent));
 
   while(lo < hi) {
     if(is_virtual_address_mapped(get_pt(parent), lo)) {
@@ -11925,15 +11918,17 @@ uint64_t* clone_context(uint64_t* parent, uint64_t* vctxt) {
   set_highest_lo_page(context, hi);
 
   if(parent != MY_CONTEXT) {
+
     set_code_seg_start(context, get_code_seg_start(parent));
     set_code_seg_size(context, get_code_seg_size(parent));
     set_data_seg_start(context, get_data_seg_start(parent));
     set_data_seg_size(context, get_data_seg_size(parent));
     set_heap_seg_start(context, get_heap_seg_start(parent));
 
-    down_load_string(context, load_virtual_memory(get_pt(parent), name(vctxt)), get_name(parent));
+    // down_load_string(context, load_virtual_memory(get_pt(parent), name(vctxt)), get_name(parent));
 
     set_name(context, get_name(parent));
+
   } else {
     set_exception(context, get_exception(parent));
     set_fault(context, get_fault(parent));
